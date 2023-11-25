@@ -3,6 +3,13 @@ import hoistStatics from 'hoist-non-react-statics'
 import type { ComponentType } from 'react'
 import * as React from 'react'
 import { isValidElementType, isContextConsumer } from 'react-is'
+/**
+ * connect 的逻辑还是比较复杂的，总结一下核心流程。
+ * 1 connect 中有一个 selector 的概念，selector 有什么用？就是通过 mapStateToProps ，mapDispatchToProps ，把 redux 中 state 状态合并到 props 中，得到最新的 props 。
+ * 2 上述讲到过，每一个 connect 都会产生一个新的 Subscription ，和父级订阅器建立起关联，这样父级会触发子代的 Subscription 来实现逐层的状态派发。
+ * 3 有一点很重要，就是 Subscription 通知的是 checkForUpdates 函数，checkForUpdates 会形成新的 props ，与之前缓存的 props 进行浅比较，如果不想等，那么说明 state 已经变化了，
+ * 直接触发一个useReducer 来更新组件，上述代码片段中，我用 useState 代替 useReducer 了，如果相等，那么当前组件不需要更新，直接通知子代 Subscription ，检查子代 Subscription 是否更新，完成整个流程。
+ */
 
 import type { Store } from 'redux'
 
@@ -214,17 +221,18 @@ function strictEqual(a: unknown, b: unknown) {
 /**
  * Infers the type of props that a connector will inject into a component.
  */
-export type ConnectedProps<TConnector> =
-  TConnector extends InferableComponentEnhancerWithProps<
-    infer TInjectedProps,
-    any
-  >
-    ? unknown extends TInjectedProps
-      ? TConnector extends InferableComponentEnhancer<infer TInjectedProps>
-        ? TInjectedProps
-        : never
-      : TInjectedProps
-    : never
+export type ConnectedProps<
+  TConnector
+> = TConnector extends InferableComponentEnhancerWithProps<
+  infer TInjectedProps,
+  any
+>
+  ? unknown extends TInjectedProps
+    ? TConnector extends InferableComponentEnhancer<infer TInjectedProps>
+      ? TInjectedProps
+      : never
+    : TInjectedProps
+  : never
 
 export interface ConnectOptions<
   State = unknown,
@@ -532,14 +540,17 @@ function connect<
     function ConnectFunction<TOwnProps>(
       props: InternalConnectProps & TOwnProps
     ) {
-      const [propsContext, reactReduxForwardedRef, wrapperProps] =
-        React.useMemo(() => {
-          // Distinguish between actual "data" props that were passed to the wrapper component,
-          // and values needed to control behavior (forwarded refs, alternate context instances).
-          // To maintain the wrapperProps object reference, memoize this destructuring.
-          const { reactReduxForwardedRef, ...wrapperProps } = props
-          return [props.context, reactReduxForwardedRef, wrapperProps]
-        }, [props])
+      const [
+        propsContext,
+        reactReduxForwardedRef,
+        wrapperProps,
+      ] = React.useMemo(() => {
+        // Distinguish between actual "data" props that were passed to the wrapper component,
+        // and values needed to control behavior (forwarded refs, alternate context instances).
+        // To maintain the wrapperProps object reference, memoize this destructuring.
+        const { reactReduxForwardedRef, ...wrapperProps } = props
+        return [props.context, reactReduxForwardedRef, wrapperProps]
+      }, [props])
 
       const ContextToUse: ReactReduxContextInstance = React.useMemo(() => {
         // Users may optionally pass in a custom context instance to use instead of our ReactReduxContext.
@@ -607,8 +618,9 @@ function connect<
         // the middle of the notification loop, where `subscription` will then be null. This can
         // probably be avoided if Subscription's listeners logic is changed to not call listeners
         // that have been unsubscribed in the  middle of the notification loop.
-        const notifyNestedSubs =
-          subscription.notifyNestedSubs.bind(subscription)
+        const notifyNestedSubs = subscription.notifyNestedSubs.bind(
+          subscription
+        )
 
         return [subscription, notifyNestedSubs]
       }, [store, didStoreComeFromProps, contextValue])
@@ -725,9 +737,7 @@ function connect<
         )
       } catch (err) {
         if (latestSubscriptionCallbackError.current) {
-          ;(
-            err as Error
-          ).message += `\nThe error may be correlated with this previous error:\n${latestSubscriptionCallbackError.current.stack}\n\n`
+          ;(err as Error).message += `\nThe error may be correlated with this previous error:\n${latestSubscriptionCallbackError.current.stack}\n\n`
         }
 
         throw err
@@ -778,7 +788,7 @@ function connect<
     }
 
     // Add a hacky cast to get the right output type
-    const Connect = _Connect as unknown as ConnectedComponent<
+    const Connect = (_Connect as unknown) as ConnectedComponent<
       typeof WrappedComponent,
       WrappedComponentProps
     >
